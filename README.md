@@ -1,7 +1,4 @@
---- kotlin/lesson28/README.md (原始)
 
-
-+++ kotlin/lesson28/README.md (修改后)
 # 3D Шахматы на Kool Engine (Kotlin)
 
 ## Структура проекта
