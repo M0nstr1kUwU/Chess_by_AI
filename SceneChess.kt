@@ -1,14 +1,53 @@
 package Chess
 
+import de.fabmax.kool.Assets
 import de.fabmax.kool.KoolApplication
 import de.fabmax.kool.addScene
+import de.fabmax.kool.loadTexture2d
 import de.fabmax.kool.math.Vec3f
 import de.fabmax.kool.modules.ksl.KslPbrShader
 import de.fabmax.kool.modules.ui2.*
 import de.fabmax.kool.scene.Scene
 import de.fabmax.kool.scene.addColorMesh
+import de.fabmax.kool.pipeline.Texture2d
 import de.fabmax.kool.scene.defaultOrbitCamera
 import de.fabmax.kool.util.Color
+import javax.swing.GroupLayout
+import de.fabmax.kool.modules.ui2.Image
+
+private data class PieceTextures(
+    val wK: Texture2d,
+    val wQ: Texture2d,
+    val wR: Texture2d,
+    val wB: Texture2d,
+    val wN: Texture2d,
+    val wP: Texture2d,
+    val bK: Texture2d,
+    val bQ: Texture2d,
+    val bR: Texture2d,
+    val bB: Texture2d,
+    val bN: Texture2d,
+    val bP: Texture2d
+)
+
+private suspend fun loadPieceTextures(): PieceTextures {
+    return PieceTextures(
+        wK = Assets.loadTexture2d("pieces/wK.png").getOrThrow(),
+        wQ = Assets.loadTexture2d("pieces/wQ.png").getOrThrow(),
+        wR = Assets.loadTexture2d("pieces/wR.png").getOrThrow(),
+        wB = Assets.loadTexture2d("pieces/wB.png").getOrThrow(),
+        wN = Assets.loadTexture2d("pieces/wN.png").getOrThrow(),
+        wP = Assets.loadTexture2d("pieces/wP.png").getOrThrow(),
+        bK = Assets.loadTexture2d("pieces/bK.png").getOrThrow(),
+        bQ = Assets.loadTexture2d("pieces/bQ.png").getOrThrow(),
+        bR = Assets.loadTexture2d("pieces/bR.png").getOrThrow(),
+        bB = Assets.loadTexture2d("pieces/bB.png").getOrThrow(),
+        bN = Assets.loadTexture2d("pieces/bN.png").getOrThrow(),
+        bP = Assets.loadTexture2d("pieces/bP.png").getOrThrow()
+    )
+}
+
+
 
 fun main() = KoolApplication {
     val game = ChessGame.start()
@@ -327,14 +366,14 @@ private fun ColumnScope.attachMiniBoard(controller: ChessSceneController, game: 
                 val sq = index(file, rank)
                 val piece = game.pieceAt(sq)
 
-                val label = when (piece?.type) {
-                    null -> " "
-                    PieceType.Pawn -> if (piece.side == Side.White) "♙" else "♟"
-                    PieceType.Knight -> if (piece.side == Side.White) "♘" else "♞"
-                    PieceType.Bishop -> if (piece.side == Side.White) "♗" else "♝"
-                    PieceType.Rook -> if (piece.side == Side.White) "♖" else "♜"
-                    PieceType.Queen -> if (piece.side == Side.White) "♕" else "♛"
-                    PieceType.King -> if (piece.side == Side.White) "♔" else "♚"
+                val texture = when (piece?.type) {
+                    null -> null
+                    PieceType.Pawn -> if (piece.side == Side.White) controller.textures.wP else controller.textures.bP
+                    PieceType.Knight -> if (piece.side == Side.White) controller.textures.wN else controller.textures.bN
+                    PieceType.Bishop -> if (piece.side == Side.White) controller.textures.wB else controller.textures.bB
+                    PieceType.Rook -> if (piece.side == Side.White) controller.textures.wR else controller.textures.bR
+                    PieceType.Queen -> if (piece.side == Side.White) controller.textures.wQ else controller.textures.bQ
+                    PieceType.King -> if (piece.side == Side.White) controller.textures.wK else controller.textures.bK
                 }
 
                 val bg = when {
@@ -343,12 +382,16 @@ private fun ColumnScope.attachMiniBoard(controller: ChessSceneController, game: 
                     else -> if ((file + rank) % 2 == 0) Color(0.90f, 0.82f, 0.67f, 1f) else Color(0.43f, 0.27f, 0.15f, 1f)
                 }
 
-                Button(label) {
+                Button("") {
                     modifier
                         .size(36.dp, 36.dp)
                         .margin(1.dp)
                         .background(RoundRectBackground(bg, 4.dp))
                         .onClick { controller.onSquareClick(sq) }
+
+                    if (texture != null) {
+                        Image(texture) {}
+                    }
                 }
             }
         }
