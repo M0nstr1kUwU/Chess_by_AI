@@ -11,27 +11,18 @@ import de.fabmax.kool.scene.Scene
 import de.fabmax.kool.scene.addColorMesh
 import de.fabmax.kool.pipeline.Texture2d
 import de.fabmax.kool.scene.defaultOrbitCamera
+import de.fabmax.kool.modules.ui2.mutableStateOf
 import de.fabmax.kool.util.Color
-import javax.swing.GroupLayout
-import de.fabmax.kool.modules.ui2.Image
+import kotlinx.coroutines.*
 
 private data class PieceTextures(
-    val wK: Texture2d,
-    val wQ: Texture2d,
-    val wR: Texture2d,
-    val wB: Texture2d,
-    val wN: Texture2d,
-    val wP: Texture2d,
-    val bK: Texture2d,
-    val bQ: Texture2d,
-    val bR: Texture2d,
-    val bB: Texture2d,
-    val bN: Texture2d,
-    val bP: Texture2d
+    val wK: Texture2d, val wQ: Texture2d, val wR: Texture2d, val wB: Texture2d,
+    val wN: Texture2d, val wP: Texture2d, val bK: Texture2d, val bQ: Texture2d,
+    val bR: Texture2d, val bB: Texture2d, val bN: Texture2d, val bP: Texture2d
 )
 
-private suspend fun loadPieceTextures(): PieceTextures {
-    return PieceTextures(
+private suspend fun loadPieceTextures(): PieceTextures = withContext(Dispatchers.IO) {
+    PieceTextures(
         wK = Assets.loadTexture2d("pieces/wK.png").getOrThrow(),
         wQ = Assets.loadTexture2d("pieces/wQ.png").getOrThrow(),
         wR = Assets.loadTexture2d("pieces/wR.png").getOrThrow(),
@@ -47,75 +38,69 @@ private suspend fun loadPieceTextures(): PieceTextures {
     )
 }
 
-
-
 fun main() = KoolApplication {
     val game = ChessGame.start()
     val controller = ChessSceneController(game)
 
+    // Асинхронная загрузка текстур в фоне, после загрузки UI обновится автоматически
+    CoroutineScope(Dispatchers.Main).launch {
+        controller.textures = loadPieceTextures()
+    }
+
+    // 3D сцена
     addScene {
         defaultOrbitCamera()
-
         lighting.singleDirectionalLight {
             setup(Vec3f(-0.7f, -1.0f, -0.5f))
             setColor(Color.WHITE, 7.5f)
         }
-
         controller.attach3D(this, game.snapshotPosition())
     }
 
+    // UI сцена
     addScene {
         setupUiScene()
-
         addPanelSurface {
             modifier
                 .align(AlignmentX.Start, AlignmentY.Top)
                 .margin(10.dp)
                 .padding(10.dp)
                 .background(RoundRectBackground(Color(0f, 0f, 0f, 0.35f), 12.dp))
-
             Column {
                 Text(controller.statusText.value) {
                     modifier.margin(bottom = sizes.gap)
                 }
-
                 Text("Click a piece, then a target square.") {
                     modifier.margin(bottom = sizes.gap)
                 }
-
                 attachMiniBoard(controller, game)
             }
         }
     }
 }
 
-private class ChessSceneController(
-    private val game: ChessGame
-) {
+private class ChessSceneController(private val game: ChessGame) {
     val selectedSquare = mutableStateOf<Int?>(null)
     val legalTargets = mutableStateOf(emptySet<Int>())
     val statusText = mutableStateOf("White to move")
+    var textures: PieceTextures? = null
 
     private val visuals = mutableListOf<PieceVisual>()
     private lateinit var scene: Scene
 
     fun attach3D(scene: Scene, position: ChessPosition) {
         this.scene = scene
-
         scene.addBoardBase3D()
         scene.addBoardSquares3D()
         spawnVisuals(position)
-
         refreshStatus()
         rebuildTargets()
     }
 
     fun onSquareClick(square: Int) {
         if (game.currentResult() !is GameResult.Ongoing) return
-
         val clickedPiece = game.pieceAt(square)
         val selected = selectedSquare.value
-
         if (selected == null) {
             if (clickedPiece?.side == game.sideToMove) {
                 selectedSquare.value = square
@@ -123,13 +108,11 @@ private class ChessSceneController(
             }
             return
         }
-
         if (selected == square) {
             selectedSquare.value = null
             rebuildTargets()
             return
         }
-
         val legalMove = game.legalMovesFrom(selected).firstOrNull { it.to == square }
         if (legalMove != null) {
             val movingSide = game.sideToMove
@@ -141,7 +124,6 @@ private class ChessSceneController(
             }
             return
         }
-
         if (clickedPiece?.side == game.sideToMove) {
             selectedSquare.value = square
             rebuildTargets()
@@ -161,17 +143,9 @@ private class ChessSceneController(
         statusText.value = when (val result = game.currentResult()) {
             GameResult.Ongoing -> {
                 val side = if (game.sideToMove == Side.White) "White" else "Black"
-                if (game.isKingInCheck(game.sideToMove)) {
-                    "$side to move — check"
-                } else {
-                    "$side to move"
-                }
+                if (game.isKingInCheck(game.sideToMove)) "$side to move — check" else "$side to move"
             }
-
-            is GameResult.Checkmate -> {
-                "Checkmate! Winner: ${if (result.winner == Side.White) "White" else "Black"}"
-            }
-
+            is GameResult.Checkmate -> "Checkmate! Winner: ${if (result.winner == Side.White) "White" else "Black"}"
             GameResult.Stalemate -> "Stalemate"
             GameResult.DrawByRepetition -> "Draw by repetition"
             GameResult.DrawByFiftyMoveRule -> "Draw by 50-move rule"
@@ -180,16 +154,13 @@ private class ChessSceneController(
     }
 
     fun syncVisualsFromGame() {
-        for (v in visuals) {
-            v.capture()
-        }
+        visuals.forEach { it.capture() }
         visuals.clear()
         spawnVisuals(game.snapshotPosition())
     }
 
     private fun spawnVisuals(position: ChessPosition) {
         visuals.clear()
-
         for (square in 0 until 64) {
             val piece = position.board[square] ?: continue
             visuals += PieceVisual(scene, piece.side, piece.type, square)
@@ -199,16 +170,13 @@ private class ChessSceneController(
     private fun applyVisualMove(move: ChessMove, movingSide: Side) {
         val mover = visuals.lastOrNull { !it.captured && it.square == move.from && it.side == movingSide }
         val capturedAtTarget = visuals.lastOrNull { !it.captured && it.square == move.to && it !== mover }
-
         if (move.isEnPassant) {
             val capturedSquare = if (movingSide == Side.White) move.to - 8 else move.to + 8
             visuals.lastOrNull { !it.captured && it.square == capturedSquare }?.capture()
         } else {
             capturedAtTarget?.capture()
         }
-
         mover?.moveTo(move.to)
-
         if (move.isCastle) {
             when (move.to) {
                 index("g1") -> visuals.lastOrNull { !it.captured && it.square == index("h1") }?.moveTo(index("f1"))
@@ -217,14 +185,14 @@ private class ChessSceneController(
                 index("c8") -> visuals.lastOrNull { !it.captured && it.square == index("a8") }?.moveTo(index("d8"))
             }
         }
-
         if (move.promotion != null && mover != null) {
             mover.capture()
             visuals += PieceVisual(scene, movingSide, move.promotion, move.to)
         }
     }
 
-    private class PieceVisual(
+    // --- 3D модели фигур (без изменений) ---
+    private inner class PieceVisual(
         private val scene: Scene,
         val side: Side,
         var type: PieceType,
@@ -234,29 +202,20 @@ private class ChessSceneController(
         var captured: Boolean = false
             private set
 
-        init {
-            spawn()
-        }
+        init { spawn() }
 
         fun moveTo(newSquare: Int) {
             if (captured) return
-
             val dx = squareX(fileOf(newSquare)) - squareX(fileOf(square))
             val dz = squareZ(rankOf(newSquare)) - squareZ(rankOf(square))
-
-            for (part in parts) {
-                part.translate(dx, 0f, dz)
-            }
-
+            parts.forEach { it.translate(dx, 0f, dz) }
             square = newSquare
         }
 
         fun capture() {
             if (captured) return
             captured = true
-            for (part in parts) {
-                part.hide()
-            }
+            parts.forEach { it.hide() }
         }
 
         private fun spawn() {
@@ -264,7 +223,6 @@ private class ChessSceneController(
             val x = squareX(fileOf(square))
             val z = squareZ(rankOf(square))
             val lift = 0.06f
-
             when (type) {
                 PieceType.Pawn -> {
                     parts += scene.addPiecePart(color, x, lift + 0.08f, z, 0.50f, 0.14f, 0.50f)
@@ -272,7 +230,6 @@ private class ChessSceneController(
                     parts += scene.addPiecePart(color, x, lift + 0.60f, z, 0.25f, 0.16f, 0.25f)
                     parts += scene.addPiecePart(color, x, lift + 0.80f, z, 0.16f, 0.16f, 0.16f)
                 }
-
                 PieceType.Rook -> {
                     parts += scene.addPiecePart(color, x, lift + 0.08f, z, 0.58f, 0.14f, 0.58f)
                     parts += scene.addPiecePart(color, x, lift + 0.42f, z, 0.50f, 0.56f, 0.50f)
@@ -285,7 +242,6 @@ private class ChessSceneController(
                     parts += scene.addPiecePart(color, x - 0.22f, topY, z + 0.22f, w, 0.12f, d)
                     parts += scene.addPiecePart(color, x + 0.22f, topY, z + 0.22f, w, 0.12f, d)
                 }
-
                 PieceType.Knight -> {
                     parts += scene.addPiecePart(color, x, lift + 0.08f, z, 0.58f, 0.14f, 0.58f)
                     parts += scene.addPiecePart(color, x, lift + 0.35f, z, 0.46f, 0.50f, 0.46f)
@@ -295,7 +251,6 @@ private class ChessSceneController(
                     parts += scene.addPiecePart(color, x + 0.20f, lift + 1.00f, z + 0.03f, 0.14f, 0.16f, 0.20f)
                     parts += scene.addPiecePart(color, x + 0.12f, lift + 1.12f, z + 0.02f, 0.10f, 0.10f, 0.14f)
                 }
-
                 PieceType.Bishop -> {
                     parts += scene.addPiecePart(color, x, lift + 0.08f, z, 0.56f, 0.14f, 0.56f)
                     parts += scene.addPiecePart(color, x, lift + 0.34f, z, 0.42f, 0.50f, 0.42f)
@@ -303,7 +258,6 @@ private class ChessSceneController(
                     parts += scene.addPiecePart(color, x, lift + 1.08f, z, 0.32f, 0.10f, 0.10f)
                     parts += scene.addPiecePart(color, x, lift + 1.08f, z, 0.10f, 0.10f, 0.32f)
                 }
-
                 PieceType.Queen -> {
                     parts += scene.addPiecePart(color, x, lift + 0.08f, z, 0.60f, 0.14f, 0.60f)
                     parts += scene.addPiecePart(color, x, lift + 0.34f, z, 0.46f, 0.56f, 0.46f)
@@ -316,7 +270,6 @@ private class ChessSceneController(
                     parts += scene.addPiecePart(color, x, spikeY, z + 0.20f, 0.08f, 0.16f, 0.08f)
                     parts += scene.addPiecePart(color, x, spikeY + 0.12f, z, 0.10f, 0.10f, 0.10f)
                 }
-
                 PieceType.King -> {
                     parts += scene.addPiecePart(color, x, lift + 0.08f, z, 0.62f, 0.14f, 0.62f)
                     parts += scene.addPiecePart(color, x, lift + 0.34f, z, 0.48f, 0.58f, 0.48f)
@@ -329,6 +282,7 @@ private class ChessSceneController(
         }
     }
 
+    // ВАЖНО: class PiecePart (без inner) - теперь может создаваться без экземпляра внешнего класса
     class PiecePart(
         scene: Scene,
         x: Float,
@@ -348,55 +302,47 @@ private class ChessSceneController(
             transform.scale(Vec3f(sx, sy, sz))
             transform.translate(Vec3f(x, y, z))
         }
-
-        fun translate(dx: Float, dy: Float, dz: Float) {
-            node.transform.translate(Vec3f(dx, dy, dz))
-        }
-
-        fun hide() {
-            node.transform.translate(Vec3f(50f, -50f, 50f))
-        }
+        fun translate(dx: Float, dy: Float, dz: Float) { node.transform.translate(Vec3f(dx, dy, dz)) }
+        fun hide() { node.transform.translate(Vec3f(50f, -50f, 50f)) }
     }
 }
 
+// --- Мини-доска (UI) ---
 private fun ColumnScope.attachMiniBoard(controller: ChessSceneController, game: ChessGame) {
     for (rank in 7 downTo 0) {
         Row {
             for (file in 0..7) {
                 val sq = index(file, rank)
                 val piece = game.pieceAt(sq)
-
-                val texture = when (piece?.type) {
-                    null -> null
-                    PieceType.Pawn -> if (piece.side == Side.White) controller.textures.wP else controller.textures.bP
-                    PieceType.Knight -> if (piece.side == Side.White) controller.textures.wN else controller.textures.bN
-                    PieceType.Bishop -> if (piece.side == Side.White) controller.textures.wB else controller.textures.bB
-                    PieceType.Rook -> if (piece.side == Side.White) controller.textures.wR else controller.textures.bR
-                    PieceType.Queen -> if (piece.side == Side.White) controller.textures.wQ else controller.textures.bQ
-                    PieceType.King -> if (piece.side == Side.White) controller.textures.wK else controller.textures.bK
+                val texture = controller.textures?.let { textures ->
+                    when (piece?.type) {
+                        null -> null
+                        PieceType.Pawn -> if (piece.side == Side.White) textures.wP else textures.bP
+                        PieceType.Knight -> if (piece.side == Side.White) textures.wN else textures.bN
+                        PieceType.Bishop -> if (piece.side == Side.White) textures.wB else textures.bB
+                        PieceType.Rook -> if (piece.side == Side.White) textures.wR else textures.bR
+                        PieceType.Queen -> if (piece.side == Side.White) textures.wQ else textures.bQ
+                        PieceType.King -> if (piece.side == Side.White) textures.wK else textures.bK
+                    }
                 }
-
                 val bg = when {
                     controller.selectedSquare.value == sq -> Color(0.28f, 0.53f, 0.95f, 1f)
                     sq in controller.legalTargets.value -> Color(0.31f, 0.73f, 0.42f, 1f)
                     else -> if ((file + rank) % 2 == 0) Color(0.90f, 0.82f, 0.67f, 1f) else Color(0.43f, 0.27f, 0.15f, 1f)
                 }
-
                 Button("") {
                     modifier
                         .size(36.dp, 36.dp)
                         .margin(1.dp)
                         .background(RoundRectBackground(bg, 4.dp))
                         .onClick { controller.onSquareClick(sq) }
-
                     if (texture != null) {
-                        Image(texture) {}
+                        Image(texture) { }   // Пустой блок обязателен
                     }
                 }
             }
         }
     }
-
     Row {
         Button("Undo") {
             modifier.margin(top = sizes.gap).onClick {
@@ -408,7 +354,6 @@ private fun ColumnScope.attachMiniBoard(controller: ChessSceneController, game: 
                 }
             }
         }
-
         Button("Reset") {
             modifier.margin(start = sizes.gap, top = sizes.gap).onClick {
                 game.loadPosition(ChessPosition.start())
@@ -421,6 +366,7 @@ private fun ColumnScope.attachMiniBoard(controller: ChessSceneController, game: 
     }
 }
 
+// --- Вспомогательные функции для 3D ---
 private val BOARD_LIGHT = Color(0.90f, 0.82f, 0.67f, 1f)
 private val BOARD_DARK = Color(0.43f, 0.27f, 0.15f, 1f)
 private val WHITE_PIECE = Color(0.96f, 0.96f, 0.93f, 1f)
@@ -436,40 +382,15 @@ private fun Scene.addBoardSquares3D() {
     for (rank in 0..7) {
         for (file in 0..7) {
             val isLight = (file + rank) % 2 == 0
-            addCube(
-                if (isLight) BOARD_LIGHT else BOARD_DARK,
-                squareX(file),
-                0.0f,
-                squareZ(rank),
-                0.96f,
-                0.08f,
-                0.96f
-            )
+            addCube(if (isLight) BOARD_LIGHT else BOARD_DARK, squareX(file), 0.0f, squareZ(rank), 0.96f, 0.08f, 0.96f)
         }
     }
 }
 
-private fun Scene.addPiecePart(
-    color: Color,
-    x: Float,
-    y: Float,
-    z: Float,
-    sx: Float,
-    sy: Float,
-    sz: Float
-): ChessSceneController.PiecePart {
-    return ChessSceneController.PiecePart(this, x, y, z, sx, sy, sz)
-}
+private fun Scene.addPiecePart(color: Color, x: Float, y: Float, z: Float, sx: Float, sy: Float, sz: Float): ChessSceneController.PiecePart =
+    ChessSceneController.PiecePart(this, x, y, z, sx, sy, sz)
 
-private fun Scene.addCube(
-    color: Color,
-    x: Float,
-    y: Float,
-    z: Float,
-    sx: Float,
-    sy: Float,
-    sz: Float
-) {
+private fun Scene.addCube(color: Color, x: Float, y: Float, z: Float, sx: Float, sy: Float, sz: Float) {
     addColorMesh {
         generate { cube { colored() } }
         shader = KslPbrShader {
